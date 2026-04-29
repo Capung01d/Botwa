@@ -272,6 +272,15 @@
         .summary-box.warning-box { border-bottom-color: #f59e0b; }
         .summary-box.total-box { border-bottom-color: var(--success); grid-column: span 2; }
         .summary-box.total-box .val { font-size: 1.8rem; }
+        .summary-box.grand-total-box { 
+            border-bottom-color: #fbbf24; 
+            grid-column: span 2; 
+            background: rgba(251, 191, 36, 0.08);
+        }
+        .summary-box.grand-total-box .val { 
+            font-size: 2rem; 
+            color: #fbbf24; 
+        }
 
         .btn-pdf {
             background: none;
@@ -284,6 +293,50 @@
             margin-top: 10px;
             cursor: pointer;
         }
+
+        /* --- Modal / Alert Custom --- */
+        .modal-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 3000;
+            display: none; justify-content: center; align-items: center;
+            backdrop-filter: blur(6px);
+        }
+        .modal-overlay.show { display: flex; }
+        .modal-box {
+            background: #1e293b;
+            border: 1px solid var(--border-glass);
+            border-radius: 20px;
+            padding: 25px;
+            width: 85%;
+            max-width: 350px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.6);
+            text-align: center;
+        }
+        .modal-box h3 { margin-bottom: 15px; font-size: 1rem; }
+        .modal-box input {
+            margin-bottom: 12px;
+            text-align: center;
+            font-size: 1.5rem;
+            letter-spacing: 8px;
+        }
+        .modal-box .btn-modal {
+            padding: 12px;
+            border-radius: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            margin: 5px;
+            min-width: 80px;
+            border: none;
+        }
+        .btn-modal-confirm { background: var(--danger); color: white; }
+        .btn-modal-cancel { background: rgba(255,255,255,0.1); color: white; }
+        .modal-error {
+            color: #fbbf24;
+            font-size: 0.8rem;
+            margin-top: 10px;
+            display: none;
+            line-height: 1.4;
+        }
+        .modal-error.show { display: block; }
     </style>
 </head>
 <body>
@@ -317,6 +370,22 @@
 </aside>
 
 <div class="overlay" id="overlay" onclick="toggleSidebar()"></div>
+
+<!-- Modal Password -->
+<div class="modal-overlay" id="password-modal">
+    <div class="modal-box">
+        <h3>🔒 Konfirmasi Hapus Data</h3>
+        <p style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 15px;">Masukkan password pengembang</p>
+        <input type="password" id="password-input" placeholder="******" maxlength="6" inputmode="numeric">
+        <div>
+            <button class="btn-modal btn-modal-cancel" onclick="closePasswordModal()">Batal</button>
+            <button class="btn-modal btn-modal-confirm" onclick="verifyPassword()">Hapus</button>
+        </div>
+        <div class="modal-error" id="modal-error-msg">
+            ⚠️ Anda mencoba mengubah data. System terkunci hanya mazkiplay_dev yang bisa menghapus ini...
+        </div>
+    </div>
+</div>
 
 <!-- Main UI -->
 <main class="content-scroll">
@@ -410,6 +479,10 @@
                         <span class="val" id="sum-keseluruhan">0</span>
                         <span class="lbl">Keseluruhan Data Tercatat</span>
                     </div>
+                    <div class="summary-box grand-total-box">
+                        <span class="val" id="sum-grand-total-ikan">0.0</span>
+                        <span class="lbl">💰 TOTAL KESELURUHAN PENDAPATAN IKAN (TON)</span>
+                    </div>
                 </div>
             </div>
 
@@ -422,6 +495,7 @@
 
 <script>
     let db;
+    let pendingDeleteId = null;
 
     // --- Boot Logic ---
     function init() {
@@ -488,9 +562,39 @@
         };
     }
 
-    // --- Delete Data Function ---
-    function deleteLog(id) {
-        if(!confirm("Yakin ingin menghapus data Trip #" + id + "?")) return;
+    // --- Password Modal for Delete ---
+    function openPasswordModal(id) {
+        pendingDeleteId = id;
+        document.getElementById('password-input').value = "";
+        document.getElementById('modal-error-msg').classList.remove('show');
+        document.getElementById('password-modal').classList.add('show');
+        document.getElementById('password-input').focus();
+    }
+
+    function closePasswordModal() {
+        document.getElementById('password-modal').classList.remove('show');
+        pendingDeleteId = null;
+    }
+
+    function verifyPassword() {
+        const pwd = document.getElementById('password-input').value;
+        if(pwd === "211421") {
+            // Password benar -> hapus
+            closePasswordModal();
+            if(pendingDeleteId !== null) {
+                confirmAndDelete(pendingDeleteId);
+                pendingDeleteId = null;
+            }
+        } else {
+            // Password salah
+            document.getElementById('modal-error-msg').classList.add('show');
+            document.getElementById('password-input').value = "";
+            document.getElementById('password-input').focus();
+        }
+    }
+
+    // Triggered after password verified
+    function confirmAndDelete(id) {
         const tx = db.transaction("logs", "readwrite");
         tx.objectStore("logs").delete(id);
         tx.oncomplete = () => {
@@ -498,6 +602,12 @@
         };
     }
 
+    // Called from button - opens password modal first
+    function requestDelete(id) {
+        openPasswordModal(id);
+    }
+
+    // --- Render Data ---
     function renderData() {
         if(!db) return;
         const tx = db.transaction("logs", "readonly");
@@ -510,7 +620,6 @@
             const container = document.getElementById('log-container');
             container.innerHTML = "";
 
-            // Counters
             let countCerah = 0;
             let countHujanBadai = 0;
             let countRusakBerat = 0;
@@ -527,19 +636,17 @@
                         </div>
                         <div class="log-right">
                             <div class="log-badge">${item.ikan} T</div>
-                            <button class="btn-delete" onclick="deleteLog(${item.id})">✕ Hapus</button>
+                            <button class="btn-delete" onclick="requestDelete(${item.id})">✕ Hapus</button>
                         </div>
                     </div>
                 `;
                 container.insertAdjacentHTML('beforeend', html);
 
-                // Count cuaca
                 if(item.cuaca === 'Cerah' || item.cuaca === 'Berawan') {
                     countCerah++;
                 } else {
                     countHujanBadai++;
                 }
-                // Count jaring
                 if(item.jaring === 'Rusak Berat') countRusakBerat++;
                 if(item.jaring === 'Rusak Ringan') countRusakRingan++;
             });
@@ -547,7 +654,6 @@
             document.getElementById('total-ikan').innerText = totalIkan.toFixed(1);
             document.getElementById('total-log').innerText = data.length;
 
-            // Update Summary
             if(data.length > 0) {
                 document.getElementById('summary-section').style.display = 'block';
                 document.getElementById('sum-total-ikan').innerText = totalIkan.toFixed(1);
@@ -557,6 +663,7 @@
                 document.getElementById('sum-rusak-berat').innerText = countRusakBerat;
                 document.getElementById('sum-rusak-ringan').innerText = countRusakRingan;
                 document.getElementById('sum-keseluruhan').innerText = data.length + " Trip";
+                document.getElementById('sum-grand-total-ikan').innerText = totalIkan.toFixed(1) + " Ton";
             } else {
                 document.getElementById('summary-section').style.display = 'none';
             }
@@ -590,6 +697,17 @@
             const data = e.target.result;
             if(data.length === 0) return alert("Data kosong.");
 
+            let totalIkan = 0;
+            let countRusak = 0;
+            let rows = "";
+            
+            data.forEach(d => {
+                totalIkan += d.ikan;
+                if(d.jaring === 'Rusak Berat' || d.jaring === 'Rusak Ringan') countRusak++;
+                const date = new Date(d.waktu).toLocaleDateString('id-ID');
+                rows += `<tr><td>${d.id}</td><td>${date}</td><td>${d.ikan}</td><td>${d.cuaca}</td><td>${d.jaring}</td></tr>`;
+            });
+
             let html = `
                 <html>
                 <head>
@@ -603,7 +721,8 @@
                         td { padding: 8px 10px; border: 1px solid #ddd; font-size: 12px; }
                         tr:nth-child(even) { background: #f9f9f9; }
                         .footer { margin-top: 30px; text-align: center; font-size: 11px; color: #888; }
-                        .summary-row { font-weight: bold; background: #e2e8f0; }
+                        .summary-row td { font-weight: bold; background: #e2e8f0; padding: 10px; }
+                        .grand-total-row td { font-weight: bold; background: #fbbf24; color: #1e293b; padding: 12px; font-size: 14px; }
                     </style>
                 </head>
                 <body>
@@ -620,24 +739,14 @@
                             </tr>
                         </thead>
                         <tbody>
-            `;
-
-            let totalIkan = 0;
-            let countRusak = 0;
-            data.forEach(d => {
-                totalIkan += d.ikan;
-                if(d.jaring === 'Rusak Berat' || d.jaring === 'Rusak Ringan') countRusak++;
-                const date = new Date(d.waktu).toLocaleDateString('id-ID');
-                html += `<tr><td>${d.id}</td><td>${date}</td><td>${d.ikan}</td><td>${d.cuaca}</td><td>${d.jaring}</td></tr>`;
-            });
-
-            html += `
+                            ${rows}
                         </tbody>
                     </table>
                     <table>
-                        <tr class="summary-row"><td colspan="2"><strong>Total Ikan</strong></td><td colspan="3"><strong>${totalIkan.toFixed(1)} Ton</strong></td></tr>
-                        <tr class="summary-row"><td colspan="2"><strong>Total Trip</strong></td><td colspan="3"><strong>${data.length} Trip</strong></td></tr>
-                        <tr class="summary-row"><td colspan="2"><strong>Jaring Rusak</strong></td><td colspan="3"><strong>${countRusak} Kejadian</strong></td></tr>
+                        <tr class="summary-row"><td colspan="2">Total Ikan</td><td colspan="3">${totalIkan.toFixed(1)} Ton</td></tr>
+                        <tr class="summary-row"><td colspan="2">Total Trip</td><td colspan="3">${data.length} Trip</td></tr>
+                        <tr class="summary-row"><td colspan="2">Jaring Rusak</td><td colspan="3">${countRusak} Kejadian</td></tr>
+                        <tr class="grand-total-row"><td colspan="2">💰 TOTAL KESELURUHAN PENDAPATAN IKAN</td><td colspan="3">${totalIkan.toFixed(1)} Ton</td></tr>
                     </table>
                     <div class="footer">Database KM. Berkah Samudera 10 &bull; Captain, Rohyadi</div>
                 </body>
@@ -655,6 +764,15 @@
             URL.revokeObjectURL(url);
         };
     }
+
+    // Enter key on password input
+    document.addEventListener('DOMContentLoaded', function() {
+        document.getElementById('password-input').addEventListener('keydown', function(e) {
+            if(e.key === 'Enter') {
+                verifyPassword();
+            }
+        });
+    });
 
     window.onload = init;
 </script>
