@@ -14,6 +14,7 @@
             --bg-main: #0f172a;
             --accent: #38bdf8;
             --success: #22c55e;
+            --danger: #ef4444;
             --card-glass: rgba(255, 255, 255, 0.05);
             --border-glass: rgba(255, 255, 255, 0.1);
         }
@@ -217,6 +218,30 @@
             font-weight: 600;
             margin-top: 20px;
         }
+
+        /* --- Delete Button --- */
+        .btn-delete {
+            background: rgba(239, 68, 68, 0.15);
+            border: 1px solid var(--danger);
+            color: var(--danger);
+            padding: 8px 12px;
+            border-radius: 10px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: 0.2s;
+            margin-left: 8px;
+            white-space: nowrap;
+        }
+        .btn-delete:active {
+            background: var(--danger);
+            color: white;
+        }
+        .log-right {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
     </style>
 </head>
 <body>
@@ -384,6 +409,16 @@
         };
     }
 
+    // --- Delete Data Function ---
+    function deleteLog(id) {
+        if(!confirm("Yakin ingin menghapus data Trip #" + id + "?")) return;
+        const tx = db.transaction("logs", "readwrite");
+        tx.objectStore("logs").delete(id);
+        tx.oncomplete = () => {
+            renderData();
+        };
+    }
+
     function renderData() {
         if(!db) return;
         const tx = db.transaction("logs", "readonly");
@@ -405,7 +440,10 @@
                             <h4>Trip #${item.id}</h4>
                             <p>📅 ${date.toLocaleDateString('id-ID')} | 🌦️ ${item.cuaca}</p>
                         </div>
-                        <div class="log-badge">${item.ikan} T</div>
+                        <div class="log-right">
+                            <div class="log-badge">${item.ikan} T</div>
+                            <button class="btn-delete" onclick="deleteLog(${item.id})">✕ Hapus</button>
+                        </div>
                     </div>
                 `;
                 container.insertAdjacentHTML('beforeend', html);
