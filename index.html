@@ -131,7 +131,7 @@
             flex: 1;
             overflow-y: auto;
             padding: 20px;
-            padding-bottom: 40px; /* Safe space bottom */
+            padding-bottom: 40px;
         }
         .view { display: none; animation: slideUp 0.4s ease-out; }
         .view.active { display: block; }
@@ -242,6 +242,48 @@
             align-items: center;
             gap: 6px;
         }
+
+        /* --- Summary Grid --- */
+        .summary-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        .summary-box {
+            background: rgba(0,0,0,0.25);
+            border-radius: 14px;
+            padding: 14px;
+            text-align: center;
+            border-bottom: 3px solid var(--accent);
+        }
+        .summary-box .val {
+            display: block;
+            font-size: 1.3rem;
+            font-weight: 800;
+        }
+        .summary-box .lbl {
+            font-size: 0.7rem;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .summary-box.danger-box { border-bottom-color: var(--danger); }
+        .summary-box.warning-box { border-bottom-color: #f59e0b; }
+        .summary-box.total-box { border-bottom-color: var(--success); grid-column: span 2; }
+        .summary-box.total-box .val { font-size: 1.8rem; }
+
+        .btn-pdf {
+            background: none;
+            border: 1px solid var(--accent);
+            color: var(--accent);
+            padding: 12px;
+            width: 100%;
+            border-radius: 12px;
+            font-weight: 600;
+            margin-top: 10px;
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
@@ -335,7 +377,44 @@
             <div id="log-container">
                 <!-- Data akan muncul di sini -->
             </div>
+
+            <!-- SUMMARY TOTAL -->
+            <div id="summary-section" style="margin-top: 10px; display: none;">
+                <h3 style="font-size: 0.85rem; text-transform: uppercase; letter-spacing: 1px; color: #94a3b8; margin-bottom: 12px;">Ringkasan Total</h3>
+                <div class="summary-grid">
+                    <div class="summary-box">
+                        <span class="val" id="sum-total-ikan">0.0</span>
+                        <span class="lbl">Total Ikan (Ton)</span>
+                    </div>
+                    <div class="summary-box">
+                        <span class="val" id="sum-total-trip">0</span>
+                        <span class="lbl">Total Trip</span>
+                    </div>
+                    <div class="summary-box">
+                        <span class="val" id="sum-cerah">0</span>
+                        <span class="lbl">Cuaca Cerah</span>
+                    </div>
+                    <div class="summary-box">
+                        <span class="val" id="sum-hujan">0</span>
+                        <span class="lbl">Cuaca Hujan/Badai</span>
+                    </div>
+                    <div class="summary-box danger-box">
+                        <span class="val" id="sum-rusak-berat">0</span>
+                        <span class="lbl">Jaring Rusak Berat</span>
+                    </div>
+                    <div class="summary-box warning-box">
+                        <span class="val" id="sum-rusak-ringan">0</span>
+                        <span class="lbl">Jaring Rusak Ringan</span>
+                    </div>
+                    <div class="summary-box total-box">
+                        <span class="val" id="sum-keseluruhan">0</span>
+                        <span class="lbl">Keseluruhan Data Tercatat</span>
+                    </div>
+                </div>
+            </div>
+
             <button class="btn-export" onclick="exportData()">DOWNLOAD LAPORAN CSV</button>
+            <button class="btn-pdf" onclick="exportPDF()">📄 DOWNLOAD LAPORAN PDF</button>
         </div>
     </div>
 
@@ -431,6 +510,12 @@
             const container = document.getElementById('log-container');
             container.innerHTML = "";
 
+            // Counters
+            let countCerah = 0;
+            let countHujanBadai = 0;
+            let countRusakBerat = 0;
+            let countRusakRingan = 0;
+
             data.slice().reverse().forEach(item => {
                 totalIkan += item.ikan;
                 const date = new Date(item.waktu);
@@ -447,10 +532,34 @@
                     </div>
                 `;
                 container.insertAdjacentHTML('beforeend', html);
+
+                // Count cuaca
+                if(item.cuaca === 'Cerah' || item.cuaca === 'Berawan') {
+                    countCerah++;
+                } else {
+                    countHujanBadai++;
+                }
+                // Count jaring
+                if(item.jaring === 'Rusak Berat') countRusakBerat++;
+                if(item.jaring === 'Rusak Ringan') countRusakRingan++;
             });
 
             document.getElementById('total-ikan').innerText = totalIkan.toFixed(1);
             document.getElementById('total-log').innerText = data.length;
+
+            // Update Summary
+            if(data.length > 0) {
+                document.getElementById('summary-section').style.display = 'block';
+                document.getElementById('sum-total-ikan').innerText = totalIkan.toFixed(1);
+                document.getElementById('sum-total-trip').innerText = data.length;
+                document.getElementById('sum-cerah').innerText = countCerah;
+                document.getElementById('sum-hujan').innerText = countHujanBadai;
+                document.getElementById('sum-rusak-berat').innerText = countRusakBerat;
+                document.getElementById('sum-rusak-ringan').innerText = countRusakRingan;
+                document.getElementById('sum-keseluruhan').innerText = data.length + " Trip";
+            } else {
+                document.getElementById('summary-section').style.display = 'none';
+            }
         };
     }
 
@@ -471,6 +580,79 @@
             link.href = url;
             link.download = `BS10_Report_${new Date().getTime()}.csv`;
             link.click();
+        };
+    }
+
+    // --- EXPORT PDF ---
+    function exportPDF() {
+        const tx = db.transaction("logs", "readonly");
+        tx.objectStore("logs").getAll().onsuccess = (e) => {
+            const data = e.target.result;
+            if(data.length === 0) return alert("Data kosong.");
+
+            let html = `
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <style>
+                        body { font-family: Arial, sans-serif; padding: 30px; }
+                        h1 { text-align: center; font-size: 22px; margin-bottom: 5px; }
+                        .sub { text-align: center; color: #555; margin-bottom: 20px; font-size: 14px; }
+                        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+                        th { background: #1e293b; color: white; padding: 10px; text-align: left; font-size: 12px; }
+                        td { padding: 8px 10px; border: 1px solid #ddd; font-size: 12px; }
+                        tr:nth-child(even) { background: #f9f9f9; }
+                        .footer { margin-top: 30px; text-align: center; font-size: 11px; color: #888; }
+                        .summary-row { font-weight: bold; background: #e2e8f0; }
+                    </style>
+                </head>
+                <body>
+                    <h1>📋 DATABASE KM. BERKAH SAMUDERA 10</h1>
+                    <div class="sub">Laporan Operasional &bull; Generated ${new Date().toLocaleDateString('id-ID')}</div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Tanggal</th>
+                                <th>Ikan (Ton)</th>
+                                <th>Cuaca</th>
+                                <th>Jaring</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+
+            let totalIkan = 0;
+            let countRusak = 0;
+            data.forEach(d => {
+                totalIkan += d.ikan;
+                if(d.jaring === 'Rusak Berat' || d.jaring === 'Rusak Ringan') countRusak++;
+                const date = new Date(d.waktu).toLocaleDateString('id-ID');
+                html += `<tr><td>${d.id}</td><td>${date}</td><td>${d.ikan}</td><td>${d.cuaca}</td><td>${d.jaring}</td></tr>`;
+            });
+
+            html += `
+                        </tbody>
+                    </table>
+                    <table>
+                        <tr class="summary-row"><td colspan="2"><strong>Total Ikan</strong></td><td colspan="3"><strong>${totalIkan.toFixed(1)} Ton</strong></td></tr>
+                        <tr class="summary-row"><td colspan="2"><strong>Total Trip</strong></td><td colspan="3"><strong>${data.length} Trip</strong></td></tr>
+                        <tr class="summary-row"><td colspan="2"><strong>Jaring Rusak</strong></td><td colspan="3"><strong>${countRusak} Kejadian</strong></td></tr>
+                    </table>
+                    <div class="footer">Database KM. Berkah Samudera 10 &bull; Captain, Rohyadi</div>
+                </body>
+                </html>
+            `;
+
+            const blob = new Blob([html], { type: 'application/pdf' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `BS10_Database_${new Date().getTime()}.pdf`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
         };
     }
 
